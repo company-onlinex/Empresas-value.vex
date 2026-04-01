@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QUANT_CORE | PRO-TERMINAL v3.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;500;800&display=swap');
+        :root { --main-cyan: #00f2ff; --warn-amber: #ffb300; --danger-red: #ff3e3e; --bg-black: #020406; }
+        body { font-family: 'JetBrains Mono', monospace; background-color: var(--bg-black); color: var(--main-cyan); }
+        .border-main { border: 1px solid rgba(0, 242, 255, 0.2); }
+        .cell-data { background: rgba(0, 242, 255, 0.03); transition: 0.2s; }
+        .cell-data:hover { background: rgba(0, 242, 255, 0.08); border-color: var(--main-cyan); }
+        .ticker-up { color: #00ff88; text-shadow: 0 0 8px rgba(0, 255, 136, 0.3); }
+        .ticker-down { color: var(--danger-red); text-shadow: 0 0 8px rgba(255, 62, 62, 0.3); }
+        /* Animación de carga de datos */
+        .loading-bar { height: 2px; background: var(--main-cyan); width: 0%; transition: width 0.5s; }
+    </style>
+</head>
+<body class="p-2 overflow-x-hidden">
+    <div id="loader" class="loading-bar fixed top-0 left-0 z-50"></div>
+    <div class="max-w-[1800px] mx-auto grid grid-cols-12 gap-3">
+        <header class="col-span-12 border-main p-4 flex flex-wrap justify-between items-center bg-[#05070a]">
+            <div>
+                <h1 class="text-xl font-extrabold tracking-tighter">QUANT_REASONING_ENGINE <span class="text-white">/ REAL_TIME_DATA</span></h1>
+                <div class="flex gap-4 mt-1 text-[10px] opacity-60 uppercase">
+                    <span>Server: <span class="text-white">Global_Cloud_Node</span></span>
+                    <span>Status: <span class="text-green-500">Authenticated</span></span>
+                    <span>Modo: <span class="text-amber-500">Live_Market_Sync</span></span>
+                </div>
+            </div>
+            <div class="flex gap-6">
+                <div class="text-right">
+                    <span class="text-[10px] block opacity-50">CAPITAL_GLOBAL_INDEX</span>
+                    <span id="market-cap-total" class="text-lg font-bold text-white">$---B</span>
+                </div>
+                <button onclick="syncNode()" class="border border-cyan-500 px-4 py-2 text-xs hover:bg-cyan-500 hover:text-black transition-all">RE-SYNC_NODE</button>
+            </div>
+        </header>
+
+        <div class="col-span-12 lg:col-span-4 space-y-3">
+            <div class="border-main p-4 bg-[#0a0c10]">
+                <h3 class="text-xs font-bold mb-4 border-b border-cyan-900 pb-2">IA_TREND_INFERENCE</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="p-3 border-main cell-data">
+                        <span class="text-[9px] block opacity-50">SENTIMIENTO_7D</span>
+                        <div id="sent-7d" class="text-lg">NEUTRAL</div>
+                    </div>
+                    <div class="p-3 border-main cell-data">
+                        <span class="text-[9px] block opacity-50">VOLATILIDAD_VIX</span>
+                        <div id="vix-index" class="text-lg">0.00%</div>
+                    </div>
+                </div>
+                <div class="mt-4 h-[250px]">
+                    <canvas id="predictionChart"></canvas>
+                </div>
+            </div>
+
+            <div class="border-main p-4 bg-[#05070a] h-[400px] overflow-hidden">
+                <h3 class="text-xs font-bold mb-2 opacity-50 italic">NODE_LIVE_FEED_LOG</h3>
+                <div id="market-log" class="text-[9px] space-y-1 font-mono overflow-y-auto h-full pr-2"></div>
+            </div>
+        </div>
+
+        <div class="col-span-12 lg:col-span-8 border-main bg-[#05070a] p-4">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-[11px]">
+                    <thead class="border-b border-cyan-900 opacity-50">
+                        <tr>
+                            <th class="pb-2">ACTIVO</th>
+                            <th class="pb-2 text-right">PRECIO_USD</th>
+                            <th class="pb-2 text-right">VAR_24H</th>
+                            <th class="pb-2 text-right">IA_TARGET_1M</th>
+                            <th class="pb-2 text-right">SCORE_COMPRA</th>
+                        </tr>
+                    </thead>
+                    <tbody id="market-body">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+    const API_URL = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=12&page=1&sparkline=false&price_change_percentage=1h,24h,7d';
+    let chartInstance;
+
+    async function syncNode() {
+        document.getElementById('loader').style.width = '30%';
+        try {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            document.getElementById('loader').style.width = '100%';
+            processMarket(data);
+            updateVisuals(data);
+            logEvent("Sincronización exitosa con nodos de liquidez.");
+            setTimeout(() => document.getElementById('loader').style.width = '0%', 500);
+        } catch (error) {
+            logEvent("ERROR_DE_ENLACE: Verifique conexión o límites de API.");
+        }
+    }
+
+    function processMarket(assets) {
+        const body = document.getElementById('market-body');
+        body.innerHTML = '';
+        
+        let totalCap = 0;
+        let avgVol = 0;
+
+        assets.forEach(asset => {
+            totalCap += asset.market_cap;
+            avgVol += Math.abs(asset.price_change_percentage_24h);
+            
+            // Lógica de IA: Cálculo de Target basado en Momentum y Volatilidad
+            const momentum = asset.price_change_percentage_7d_in_currency || 0;
+            const target = asset.current_price * (1 + (momentum / 100) * 1.5);
+            const score = Math.min(100, Math.max(0, 50 + (momentum * 2))).toFixed(0);
+
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-white/5 hover:bg-white/5 transition-colors';
+            tr.innerHTML = `
+                <td class="py-4">
+                    <span class="font-bold text-white">${asset.symbol.toUpperCase()}</span>
+                    <span class="text-[9px] block opacity-40">${asset.name}</span>
+                </td>
+                <td class="text-right font-mono text-white">$${asset.current_price.toLocaleString()}</td>
+                <td class="text-right font-mono ${asset.price_change_percentage_24h >= 0 ? 'ticker-up' : 'ticker-down'}">
+                    ${asset.price_change_percentage_24h.toFixed(2)}%
+                </td>
+                <td class="text-right text-cyan-400 font-bold">$${target.toFixed(2)}</td>
+                <td class="text-right">
+                    <div class="w-16 bg-gray-800 h-1.5 ml-auto">
+                        <div class="bg-cyan-500 h-full" style="width: ${score}%"></div>
+                    </div>
+                </td>
+            `;
+            body.appendChild(tr);
+        });
+
+        document.getElementById('market-cap-total').innerText = `$${(totalCap / 1e12).toFixed(2)}T`;
+        document.getElementById('vix-index').innerText = (avgVol / assets.length).toFixed(2) + "%";
+        document.getElementById('sent-7d').innerText = (avgVol / assets.length) > 3 ? "HIGH_VOLATILITY" : "STABLE_GROWTH";
+    }
+
+    function logEvent(msg) {
+        const log = document.getElementById('market-log');
+        const entry = document.createElement('div');
+        entry.className = 'border-l border-cyan-800 pl-2 mb-1 py-1 bg-white/5';
+        entry.innerHTML = `<span class="opacity-40">[${new Date().toLocaleTimeString()}]</span> <span class="text-cyan-300">SYSTEM:</span> ${msg}`;
+        log.prepend(entry);
+    }
+
+    function updateVisuals(data) {
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+        
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.slice(0,6).map(a => a.symbol.toUpperCase()),
+                datasets: [{
+                    label: 'Volatilidad 24h',
+                    data: data.slice(0,6).map(a => Math.abs(a.price_change_percentage_24h)),
+                    borderColor: '#00f2ff',
+                    backgroundColor: 'rgba(0, 242, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { 
+                    y: { display: false },
+                    x: { ticks: { color: '#00f2ff', font: { size: 8 } } }
+                }
+            }
+        });
+    }
+
+    // Inicialización y Refresco automático cada 45 segundos
+    window.onload = () => {
+        syncNode();
+        setInterval(syncNode, 45000);
+    };
+</script>
+</body>
+</html>
